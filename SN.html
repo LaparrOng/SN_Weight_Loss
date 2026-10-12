@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weight Log</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#15181d; --muted:#6b7280; --line:#e5e7eb;
+          --accent:#0f766e; --soft:#ccfbf1; --down:#0f766e; --up:#b45309; --danger:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --card:#171a21; --text:#e8eaed; --muted:#9aa1ac; --line:#2a2f3a;
+            --accent:#2dd4bf; --soft:#123a36; --down:#2dd4bf; --up:#f59e0b; --danger:#f87171; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px; }
+  .hidden { display:none !important; }
+  .num { font-variant-numeric:tabular-nums; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  h1 { font-size:18px; margin:0; }
+  .cur { text-align:right; } .cur b { font-size:22px; } .cur small { display:block; color:var(--muted); font-size:12px; }
+  .tabs { display:flex; gap:4px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:4px; margin-bottom:16px; }
+  .tab { flex:1; border:0; background:none; color:var(--muted); padding:10px; border-radius:9px; font:inherit; font-weight:600; }
+  .tab.active { background:var(--soft); color:var(--text); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .card h2 { font-size:14px; color:var(--muted); margin:0 0 10px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  input, select { width:100%; font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .row { display:flex; gap:10px; margin-top:12px; }
+  #weight { font-size:30px; font-weight:700; }
+  .save { border:0; background:var(--accent); color:var(--bg); font:inherit; font-weight:700; padding:0 22px; border-radius:10px; }
+  .status { min-height:20px; font-size:14px; margin-top:10px; color:var(--muted); }
+  .status.err { color:var(--danger); }
+  .down { color:var(--down); } .up { color:var(--up); }
+  table { width:100%; border-collapse:collapse; font-size:15px; }
+  td { padding:9px 4px; border-top:1px solid var(--line); }
+  tr:first-child td { border-top:0; }
+  td.r { text-align:right; }
+  .link { border:0; background:none; color:var(--muted); font:inherit; font-size:13px; padding:4px; }
+  .link.del { color:var(--danger); }
+  .controls { display:flex; gap:10px; margin-bottom:12px; }
+  .controls select { width:auto; }
+  .toggle { border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; }
+  .toggle.on, .month.active { background:var(--accent); color:var(--bg); border-color:var(--accent); opacity:1; }
+  .months { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-bottom:14px; }
+  .month { border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; font-size:14px; padding:8px 0; border-radius:9px; }
+  .month.nodata { opacity:.4; }
+  .summary { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:12px; text-align:center; }
+  .summary div { background:var(--bg); border-radius:10px; padding:8px 2px; }
+  .summary small { display:block; font-size:11px; color:var(--muted); text-transform:uppercase; }
+  .summary b { font-size:15px; }
+  .box { position:relative; height:300px; }
+  .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Weight Log</h1>
+    <div class="cur"><b class="num" id="cur">–</b><small id="curLbl">No entries yet</small></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="log">Log</button>
+    <button class="tab" data-tab="chart">Chart & data</button>
+  </nav>
+
+  <!-- LOG TAB -->
+  <div id="log">
+    <form id="form" class="card" autocomplete="off">
+      <label for="date">Date</label>
+      <input type="date" id="date" required>
+      <div class="row">
+        <input type="number" id="weight" class="num" inputmode="decimal" step="0.1" min="75" max="180" placeholder="Weight (kg)" required>
+        <button class="save">Save</button>
+      </div>
+      <div id="status" class="status"></div>
+    </form>
+  </div>
+
+  <!-- CHART & DATA TAB -->
+  <div id="chart" class="hidden">
+    <div class="card">
+      <div class="controls">
+        <select id="year"></select>
+        <button id="all" class="toggle" type="button">All time</button>
+      </div>
+      <div id="months" class="months"></div>
+      <div class="summary num">
+        <div><small>Start</small><b id="sStart">–</b></div>
+        <div><small>End</small><b id="sEnd">–</b></div>
+        <div><small>Change</small><b id="sChange">–</b></div>
+        <div><small>Lowest</small><b id="sLow">–</b></div>
+        <div><small>Average</small><b id="sAvg">–</b></div>
+      </div>
+      <div class="box"><canvas id="canvas"></canvas><div id="empty" class="empty hidden">No entries for this period</div></div>
+    </div>
+    <div class="card">
+      <h2 id="tableTitle">Entries</h2>
+      <table class="num"><tbody id="rows"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ===== PASTE YOUR FIREBASE CONFIG HERE =====
+  const firebaseConfig = {
+    apiKey: "PASTE_HERE",
+    authDomain: "PASTE_HERE",
+    projectId: "PASTE_HERE",
+    storageBucket: "PASTE_HERE",
+    messagingSenderId: "PASTE_HERE",
+    appId: "PASTE_HERE"
+  };
+  // ===========================================
+
+  const MIN_KG = 75, MAX_KG = 180;
+
+  const db = getFirestore(initializeApp(firebaseConfig));
+  const weightsRef = collection(db, "weights"); // one document per date, e.g. weights/2026-10-12 → { weight: 78.4 }
+
+  // ---------- helpers ----------
+  const $ = id => document.getElementById(id);
+  const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const MONTH = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore" }).format(new Date());
+  const parse = s => { const [y,m,d] = s.split("-").map(Number); return new Date(Date.UTC(y, m-1, d)); };
+  const iso = d => d.toISOString().slice(0, 10);
+  const short = s => { const d = parse(s); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
+  const long = s => { const d = parse(s); return `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
+  const kg = n => n.toFixed(1);
+  const signed = n => (n > 0 ? "+" : n < 0 ? "−" : "±") + Math.abs(n).toFixed(1);
+  const cls = n => n < 0 ? "down" : n > 0 ? "up" : "";
+  const color = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const status = (msg, err) => { $("status").textContent = msg; $("status").className = "status" + (err ? " err" : ""); };
+
+  // ---------- state ----------
+  let entries = [];                     // [{date, weight}] oldest → newest
+  let chart = null, tab = "log";
+  const [ty, tm] = today().split("-").map(Number);
+  const view = { year: ty, month: tm, all: false };
+
+  $("date").value = today();
+  $("date").max = today();
+  $("weight").focus();
+
+  // ---------- live data from Firebase ----------
+  onSnapshot(weightsRef, snap => {
+    entries = snap.docs.map(d => ({ date: d.id, weight: d.data().weight }))
+      .filter(e => typeof e.weight === "number")
+      .sort((a, b) => a.date < b.date ? -1 : 1);
+    renderHeader();
+    if (tab === "chart") renderChartTab();
+  }, err => status("Couldn't load data: " + err.message, true));
+
+  // ---------- save ----------
+  $("form").onsubmit = e => {
+    e.preventDefault();
+    const date = $("date").value, w = parseFloat($("weight").value);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return status("Pick a valid date.", true);
+    if (!(w >= MIN_KG && w <= MAX_KG)) return status(`Enter a weight between ${MIN_KG} and ${MAX_KG} kg.`, true);
+    const weight = Math.round(w * 10) / 10;
+    const prev = [...entries].reverse().find(x => x.date < date);
+    setDoc(doc(weightsRef, date), { weight }).catch(err => status("Save failed: " + err.message, true));
+    status(`Saved ${kg(weight)} kg for ${short(date)}` + (prev ? ` (${signed(weight - prev.weight)} kg vs ${short(prev.date)})` : "") + ".");
+    $("weight").value = "";
+    $("date").value = today();
+    $("weight").blur();
+  };
+
+  // ---------- tabs ----------
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+    tab = t.dataset.tab;
+    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+    $("log").classList.toggle("hidden", tab !== "log");
+    $("chart").classList.toggle("hidden", tab !== "chart");
+    if (tab === "chart") renderChartTab();
+  });
+
+  function renderHeader() {
+    if (!entries.length) { $("cur").textContent = "–"; $("curLbl").textContent = "No entries yet"; return; }
+    const last = entries[entries.length - 1];
+    $("cur").textContent = kg(last.weight) + " kg";
+    $("curLbl").textContent = "Latest · " + short(last.date);
+  }
+
+  // ---------- chart & data tab ----------
+  $("year").onchange = e => { view.year = +e.target.value; view.all = false; renderChartTab(); };
+  $("all").onclick = () => { view.all = !view.all; renderChartTab(); };
+  $("months").onclick = e => { const b = e.target.closest("[data-m]"); if (b) { view.month = +b.dataset.m; view.all = false; renderChartTab(); } };
+
+  // Edit / delete from the data table
+  $("rows").onclick = e => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const date = b.dataset.date;
+    if (b.dataset.act === "edit") {
+      $("date").value = date;
+      $("weight").value = kg(entries.find(x => x.date === date).weight);
+      document.querySelector('[data-tab="log"]').click();
+      status(`Editing ${long(date)}. Change the weight and Save.`);
+      $("weight").focus();
+    } else if (confirm(`Delete the entry for ${long(date)}?`)) {
+      deleteDoc(doc(weightsRef, date)).catch(err => alert("Delete failed: " + err.message));
+    }
+  };
+
+  function renderChartTab() {
+    const years = [...new Set([ty, ...entries.map(e => +e.date.slice(0, 4))])].sort((a, b) => b - a);
+    $("year").innerHTML = years.map(y => `<option ${y === view.year ? "selected" : ""}>${y}</option>`).join("");
+
+    const has = new Set(entries.filter(e => e.date.startsWith(view.year + "-")).map(e => +e.date.slice(5, 7)));
+    $("months").innerHTML = MON.map((m, i) =>
+      `<button class="month ${has.has(i+1) ? "" : "nodata"} ${!view.all && view.month === i+1 ? "active" : ""}" data-m="${i+1}">${m}</button>`).join("");
+    $("all").classList.toggle("on", view.all);
+
+    // Date range for the selected view
+    let start, end;
+    if (view.all) { if (entries.length) { start = entries[0].date; end = entries.at(-1).date; } }
+    else { start = `${view.year}-${String(view.month).padStart(2, "0")}-01`; end = iso(new Date(Date.UTC(view.year, view.month, 0))); }
+    const list = start ? entries.filter(e => e.date >= start && e.date <= end) : [];
+
+    // Summary strip
+    const ws = list.map(e => e.weight);
+    const ch = ws.length > 1 ? ws.at(-1) - ws[0] : null;
+    $("sStart").textContent = ws.length ? kg(ws[0]) : "–";
+    $("sEnd").textContent = ws.length ? kg(ws.at(-1)) : "–";
+    $("sChange").textContent = ch === null ? "–" : signed(ch);
+    $("sChange").className = ch === null ? "" : cls(ch);
+    $("sLow").textContent = ws.length ? kg(Math.min(...ws)) : "–";
+    $("sAvg").textContent = ws.length ? kg(ws.reduce((a, b) => a + b, 0) / ws.length) : "–";
+
+    // Data table (newest first, with daily change)
+    $("tableTitle").textContent = view.all ? "All entries" : `${MONTH[view.month - 1]} ${view.year}`;
+    $("rows").innerHTML = list.length ? list.map((e, i) => {
+      const d = i ? e.weight - list[i - 1].weight : null;
+      return `<tr><td>${long(e.date)}</td><td class="r"><b>${kg(e.weight)}</b></td>
+        <td class="r ${d === null ? "" : cls(d)}">${d === null ? "" : signed(d)}</td>
+        <td class="r"><button class="link" data-act="edit" data-date="${e.date}">Edit</button>
+        <button class="link del" data-act="del" data-date="${e.date}">Delete</button></td></tr>`;
+    }).reverse().join("") : `<tr><td style="color:var(--muted)">No entries.</td></tr>`;
+
+    // Chart: one point per calendar day; missed days are left blank and the line bridges them
+    const map = new Map(entries.map(e => [e.date, e.weight]));
+    const dates = [], labels = [], data = [];
+    if (start) for (let d = parse(start); d <= parse(end); d.setUTCDate(d.getUTCDate() + 1)) {
+      const s = iso(d);
+      dates.push(s);
+      labels.push(view.all ? short(s) : String(d.getUTCDate()));
+      data.push(map.has(s) ? map.get(s) : null);
+    }
+    $("empty").classList.toggle("hidden", list.length > 0);
+    if (chart) chart.destroy();
+    chart = new Chart($("canvas"), {
+      type: "line",
+      data: { labels, datasets: [{ data, spanGaps: true, tension: 0.25, borderWidth: 2,
+        borderColor: color("--accent"), backgroundColor: color("--accent"), pointRadius: 3, pointHoverRadius: 6 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: "nearest", intersect: false, axis: "x" },
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { title: i => long(dates[i[0].dataIndex]), label: i => kg(i.parsed.y) + " kg" } } },
+        scales: {
+          x: { title: { display: true, text: "Date", color: color("--muted") }, grid: { display: false },
+               ticks: { color: color("--muted"), maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+          y: { title: { display: true, text: "Weight (kg)", color: color("--muted") }, grace: "5%",
+               grid: { color: color("--line") }, ticks: { color: color("--muted") } }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>
